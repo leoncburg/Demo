@@ -33,18 +33,19 @@ const BACK_MAP = {
     'voice-input':    'text',
 };
 
-// Physical device dimensions — adjust to match target hardware
-const PHYSICAL_DIAMETER_MM = 36;
-const PHYSICAL_DIAMETER_PX = Math.round(PHYSICAL_DIAMETER_MM * 96 / 25.4); // 136 px
-
-// Size test options — absolute px so they map directly to real device sizes
-const TEST_WORD    = 'Hallo';
-const TEXT_OPTIONS = [
-    { id: 'A', px: 11 },
-    { id: 'B', px: 14 },
-    { id: 'C', px: 18 },
-    { id: 'D', px: 22 },
+// ── Size Test constants — edit these to suit the session ──────────────────
+// Word list: short, age-appropriate German words (6–10 yr). A different word
+// is shown at every size step so the child reads, not recites from memory.
+const WORD_LIST = [
+    'Hund', 'Katze', 'Haus', 'Baum', 'Auto',
+    'Ball', 'Buch', 'Milch', 'Sonne', 'Mond',
+    'Kind', 'Herz', 'Blume', 'Tier', 'Brot',
+    'Glas', 'Stern', 'Weg', 'Licht', 'Fisch',
 ];
+
+// Text size steps (px, absolute — maps 1:1 to real device pixels at 96 DPI)
+const TEXT_SIZES = [8, 10, 12, 14, 16, 18, 20, 22, 24, 28, 32];
+const SIZE_START = 5; // initial index → 18 px / 13.5 pt
 
 // ── Icons ─────────────────────────────────────────────────────────────────
 function Icon({ name, color = '#000', size = '100%' }) {
@@ -533,41 +534,123 @@ function Watch({ size }) {
 }
 
 // ── Size Test ─────────────────────────────────────────────────────────────
-function SizeTestTextScreen({ selected, onSelect }) {
-    return (
-        <div className="screen size-text-screen">
-            {TEXT_OPTIONS.map(opt => (
-                <div
-                    key={opt.id}
-                    className={`size-text-option${selected === opt.id ? ' selected' : ''}`}
-                    onClick={() => onSelect(opt.id)}
-                    style={{ fontSize: opt.px + 'px' }}
-                >
-                    {TEST_WORD}
-                </div>
-            ))}
-        </div>
-    );
-}
-
 function SizeTest() {
-    const [selected, setSelected] = useState(null);
-    const px  = PHYSICAL_DIAMETER_PX;
-    const sel = TEXT_OPTIONS.find(o => o.id === selected);
-    const watchStyle = { width: px, height: px, '--ws': px + 'px' };
+    const [mode,        setMode]        = useState('text');
+    const [screenId,    setScreenId]    = useState('xl');
+    const [sizeIdx,     setSizeIdx]     = useState(SIZE_START);
+    const [wordIdx,     setWordIdx]     = useState(0);
+    const [allOutcomes, setAllOutcomes] = useState({});
+    // allOutcomes: { [screenId]: { [sizeIdx]: 'read' | 'struggled' | 'couldnt' } }
+
+    const screen   = PRESETS.find(p => p.id === screenId) || PRESETS[3];
+    const screenPx = screen.size;
+    const sizePx   = TEXT_SIZES[sizeIdx];
+    const word     = WORD_LIST[wordIdx % WORD_LIST.length];
+
+    const screenOutcomes = allOutcomes[screenId] || {};
+    const currentOutcome = screenOutcomes[sizeIdx];
+
+    // Threshold = smallest sizeIdx with outcome 'read' for this screen
+    const thresholdPx = (() => {
+        const passing = Object.entries(screenOutcomes)
+            .filter(([, o]) => o === 'read')
+            .map(([i]) => TEXT_SIZES[Number(i)]);
+        return passing.length ? Math.min(...passing) : null;
+    })();
+
+    const step = (dir) => {
+        const next = sizeIdx + dir;
+        if (next < 0 || next >= TEXT_SIZES.length) return;
+        setSizeIdx(next);
+        setWordIdx(w => w + 1); // fresh word every step regardless of direction
+    };
+
+    const changeScreen = (id) => {
+        setScreenId(id);
+        setSizeIdx(SIZE_START);
+        setWordIdx(0);
+    };
+
+    const record = (outcome) => {
+        setAllOutcomes(prev => ({
+            ...prev,
+            [screenId]: { ...(prev[screenId] || {}), [sizeIdx]: outcome },
+        }));
+    };
+
+    const ptLabel = (px) => `${px} px / ${(px * 0.75).toFixed(1)} pt`;
+    const watchStyle = { width: screenPx, height: screenPx, '--ws': screenPx + 'px' };
 
     return (
         <div className="size-test-wrap">
-            <div className="facilitator-panel">
-                <span className="fp-label">Gewählt:</span>
-                {sel
-                    ? <span className="fp-value">Option {sel.id} — {sel.px} px / {(sel.px * 0.75).toFixed(1)} pt</span>
-                    : <span className="fp-none">noch keine Auswahl</span>
-                }
+
+            {/* Mode segmented control */}
+            <div className="seg-control">
+                {[['text', 'Text'], ['buttons', 'Buttons'], ['icons', 'Icons']].map(([id, label]) => (
+                    <button
+                        key={id}
+                        className={`seg-btn${mode === id ? ' active' : ''}`}
+                        onClick={() => setMode(id)}
+                    >
+                        {label}
+                    </button>
+                ))}
             </div>
+
+            {/* Facilitator panel */}
+            <div className="facilitator-row">
+                <label className="fp-field">
+                    <span className="fp-label">Gerät</span>
+                    <select className="fp-select" value={screenId} onChange={e => changeScreen(e.target.value)}>
+                        {PRESETS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                    </select>
+                </label>
+
+                <div className="fp-divider" />
+
+                <div className="size-stepper">
+                    <button className="step-btn" onClick={() => step(-1)} disabled={sizeIdx === 0}>−</button>
+                    <span className="step-display">{ptLabel(sizePx)}</span>
+                    <button className="step-btn" onClick={() => step(1)} disabled={sizeIdx === TEXT_SIZES.length - 1}>+</button>
+                </div>
+
+                <div className="fp-divider" />
+
+                <div className="fp-field">
+                    <span className="fp-label">Schwelle</span>
+                    {thresholdPx !== null
+                        ? <span className="fp-value">{ptLabel(thresholdPx)}</span>
+                        : <span className="fp-none">—</span>
+                    }
+                </div>
+            </div>
+
+            {/* Device frame — only the word, nothing else */}
             <div className="watch-body" style={watchStyle}>
-                <SizeTestTextScreen selected={selected} onSelect={setSelected} />
+                <div className="screen">
+                    <span className="threshold-word" style={{ fontSize: sizePx + 'px' }}>
+                        {word}
+                    </span>
+                </div>
             </div>
+
+            {/* Outcome recording */}
+            <div className="outcome-row">
+                {[
+                    ['read',      'Gelesen',         'outcome-pass'],
+                    ['struggled', 'Mühsam',           'outcome-warn'],
+                    ['couldnt',   'Nicht geschafft',  'outcome-fail'],
+                ].map(([id, label, cls]) => (
+                    <button
+                        key={id}
+                        className={`outcome-btn ${cls}${currentOutcome === id ? ' active' : ''}`}
+                        onClick={() => record(id)}
+                    >
+                        {label}
+                    </button>
+                ))}
+            </div>
+
         </div>
     );
 }
