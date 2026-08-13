@@ -9,20 +9,19 @@ const PRESETS = [
 ];
 
 const CONTACTS = [
-    { id: 1, name: 'Grandpa', initial: 'G', color: '#FF6B6B' },
-    { id: 2, name: 'Grandma', initial: 'G', color: '#C77DFF' },
-    { id: 3, name: 'Mom',     initial: 'M', color: '#4FC3F7' },
-    { id: 4, name: 'Dad',     initial: 'D', color: '#FFB347' },
+    { id: 1, name: 'Opa',  initial: 'O', color: '#FF6B6B' },
+    { id: 2, name: 'Oma',  initial: 'O', color: '#C77DFF' },
+    { id: 3, name: 'Mama', initial: 'M', color: '#4FC3F7' },
+    { id: 4, name: 'Papa', initial: 'P', color: '#FFB347' },
 ];
 
-const APP_VIEWS    = ['contacts-list', 'music', 'audiobooks'];
-const QUICK_REPLIES = ['Yes', 'No', 'Soon', 'On my way'];
+const APP_VIEWS     = ['contacts-list', 'music', 'audiobooks'];
+const QUICK_REPLIES = ['Ja', 'Nein', 'Gleich', 'Bin unterwegs'];
 
-const AOD_TIMEOUT    = 30000;
+const AOD_TIMEOUT     = 30000;
 const SWIPE_THRESHOLD = 18;
 const LONG_PRESS_MS   = 600;
 
-// swipe-down back targets
 const BACK_MAP = {
     'apps-menu':      'watchface',
     'contacts-list':  'apps-menu',
@@ -71,8 +70,8 @@ function Icon({ name, color = '#000', size = '100%' }) {
         <svg {...p}>
             <rect x="9" y="2" width="6" height="11" rx="3" fill={color} />
             <path d="M5 11a7 7 0 0014 0" stroke={color} strokeWidth="2" strokeLinecap="round" />
-            <line x1="12" y1="18" x2="12" y2="22" stroke={color} strokeWidth="2"   strokeLinecap="round" />
-            <line x1="8"  y1="22" x2="16" y2="22" stroke={color} strokeWidth="2"   strokeLinecap="round" />
+            <line x1="12" y1="18" x2="12" y2="22" stroke={color} strokeWidth="2" strokeLinecap="round" />
+            <line x1="8"  y1="22" x2="16" y2="22" stroke={color} strokeWidth="2" strokeLinecap="round" />
         </svg>
     );
     if (name === 'x') return (
@@ -119,9 +118,9 @@ function AodScreen() {
 
 function AppsMenuScreen({ onSelect }) {
     const apps = [
-        { id: 'contacts-list', label: 'Contacts', icon: 'person',     bg: '#4ECDC4' },
-        { id: 'music',         label: 'Music',    icon: 'music',      bg: '#FF6B35' },
-        { id: 'audiobooks',    label: 'Books',    icon: 'headphones', bg: '#FFE66D' },
+        { id: 'contacts-list', label: 'Kontakte', icon: 'person',     bg: '#4ECDC4' },
+        { id: 'music',         label: 'Musik',    icon: 'music',      bg: '#FF6B35' },
+        { id: 'audiobooks',    label: 'Bücher',   icon: 'headphones', bg: '#FFE66D' },
     ];
     return (
         <div className="screen apps-menu-screen">
@@ -160,11 +159,11 @@ function ContactDetailScreen({ contact, onCall, onText }) {
             <div className="detail-actions">
                 <button className="detail-btn call-btn" data-interactive="true" onClick={onCall}>
                     <span className="btn-icon"><Icon name="phone" color="#fff" /></span>
-                    Call
+                    Anrufen
                 </button>
                 <button className="detail-btn text-btn" data-interactive="true" onClick={onText}>
                     <span className="btn-icon"><Icon name="message" color="#fff" /></span>
-                    Text
+                    Nachricht
                 </button>
             </div>
         </div>
@@ -176,7 +175,7 @@ function CallScreen({ contact, onEnd }) {
         <div className="screen call-screen">
             <div className="call-avatar" style={{ background: contact.color }}>{contact.initial}</div>
             <div className="call-name">{contact.name}</div>
-            <div className="call-status">Calling<span className="call-dots" /></div>
+            <div className="call-status">Verbindet<span className="call-dots" /></div>
             <div className="call-circle end-circle" data-interactive="true" onClick={onEnd}>
                 <Icon name="x" color="#fff" />
             </div>
@@ -185,65 +184,89 @@ function CallScreen({ contact, onEnd }) {
 }
 
 function VoiceInputScreen({ onSend, onCancel }) {
-    const [transcript, setTranscript] = useState('');
-    const [listening,  setListening]  = useState(false);
-    const [error,      setError]      = useState('');
-    const [attempt,    setAttempt]    = useState(0);
+    const [display,   setDisplay]   = useState('');
+    const [listening, setListening] = useState(false);
+    const [error,     setError]     = useState('');
+    const [attempt,   setAttempt]   = useState(0);
+
+    // stoppedRef: true when we deliberately stop so onend doesn't restart
+    const stoppedRef = useRef(false);
+    // finalRef: accumulates confirmed text across recognition sessions
+    const finalRef   = useRef('');
     const recRef     = useRef(null);
-    const stoppedRef = useRef(false); // true when we deliberately stop
 
     useEffect(() => {
         stoppedRef.current = false;
+        finalRef.current   = '';
+        setDisplay('');
         setError('');
-        setTranscript('');
         setListening(false);
 
         const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SR) {
-            setError('Use Chrome or Safari for voice');
+            setError('Chrome oder Safari erforderlich');
             return;
         }
 
-        const rec = new SR();
-        rec.continuous     = true;
-        rec.interimResults = true;
-        rec.lang           = 'de-DE';
+        // Create a fresh instance on every start/restart.
+        // Reusing a stopped SpeechRecognition instance is the cause of
+        // the "everything breaks after one transcription" bug.
+        function startNew() {
+            if (stoppedRef.current) return;
 
-        rec.onstart  = () => setListening(true);
-        rec.onresult = (e) => {
-            let t = '';
-            for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
-            setTranscript(t);
-        };
-        // Browsers often stop the recogniser after silence even with continuous:true.
-        // Restart automatically unless we deliberately stopped.
-        rec.onend = () => {
-            setListening(false);
-            if (!stoppedRef.current) {
-                try { rec.start(); setListening(true); } catch (_) {}
-            }
-        };
-        rec.onerror = (ev) => {
-            setListening(false);
-            if (ev.error === 'no-speech') return; // silence timeout — onend will restart
-            stoppedRef.current = true;
-            if (ev.error === 'not-allowed')
-                setError('Mic blocked — allow in browser');
-            else if (ev.error === 'service-not-allowed')
-                setError('Open via localhost, not file://');
-            else if (ev.error !== 'aborted')
-                setError(`Mic error: ${ev.error}`);
-        };
+            const rec = new SR();
+            rec.continuous     = true;
+            rec.interimResults = true;
+            rec.lang           = 'de-DE';
 
-        recRef.current = rec;
-        try { rec.start(); } catch (_) { setError('Could not start mic'); }
-        return () => { stoppedRef.current = true; rec.abort(); };
+            rec.onstart = () => setListening(true);
+
+            rec.onresult = (e) => {
+                // e.resultIndex is the first new result; iterate only new ones
+                // to avoid duplicating already-final text
+                let newFinal = '';
+                let interim  = '';
+                for (let i = e.resultIndex; i < e.results.length; i++) {
+                    if (e.results[i].isFinal) newFinal += e.results[i][0].transcript;
+                    else                      interim  += e.results[i][0].transcript;
+                }
+                if (newFinal) finalRef.current += newFinal;
+                setDisplay(finalRef.current + interim);
+            };
+
+            rec.onend = () => {
+                setListening(false);
+                // Browser stopped (often after silence even with continuous:true).
+                // Restart with a new instance rather than re-calling start()
+                // on the stopped one, which fails in some browser versions.
+                if (!stoppedRef.current) startNew();
+            };
+
+            rec.onerror = (ev) => {
+                setListening(false);
+                if (ev.error === 'no-speech') return; // silence → onend restarts
+                stoppedRef.current = true;
+                if (ev.error === 'not-allowed')
+                    setError('Mikrofon gesperrt — Zugriff erlauben');
+                else if (ev.error === 'service-not-allowed')
+                    setError('Localhost oder HTTPS erforderlich');
+                else if (ev.error !== 'aborted')
+                    setError(`Fehler: ${ev.error}`);
+            };
+
+            recRef.current = rec;
+            try { rec.start(); } catch (_) { /* caught by onerror */ }
+        }
+
+        startNew();
+        return () => { stoppedRef.current = true; recRef.current?.abort(); };
     }, [attempt]);
 
     const doSend = () => {
         stoppedRef.current = true;
         recRef.current?.abort();
-        if (transcript.trim()) onSend(transcript.trim());
+        const text = display.trim();
+        if (text) onSend(text);
         else onCancel();
     };
     const doCancel = () => { stoppedRef.current = true; recRef.current?.abort(); onCancel(); };
@@ -259,18 +282,18 @@ function VoiceInputScreen({ onSend, onCancel }) {
                 <>
                     <p className="voice-error">{error}</p>
                     <div className="voice-actions">
-                        <button className="v-btn v-cancel" data-interactive="true" onClick={doCancel}>Back</button>
-                        <button className="v-btn v-send"   data-interactive="true" onClick={retry}>Retry</button>
+                        <button className="v-btn v-cancel" data-interactive="true" onClick={doCancel}>Zurück</button>
+                        <button className="v-btn v-send"   data-interactive="true" onClick={retry}>Erneut</button>
                     </div>
                 </>
             ) : (
                 <>
-                    {!transcript && <p className="voice-status">{listening ? 'Lauscht…' : 'Startet…'}</p>}
-                    {transcript  && <p className="voice-transcript">{transcript}</p>}
+                    {!display && <p className="voice-status">{listening ? 'Lauscht…' : 'Startet…'}</p>}
+                    {display  && <p className="voice-transcript">{display}</p>}
                     <div className="voice-actions">
-                        <button className="v-btn v-cancel" data-interactive="true" onClick={doCancel}>Cancel</button>
-                        {transcript && (
-                            <button className="v-btn v-send" data-interactive="true" onClick={doSend}>Send</button>
+                        <button className="v-btn v-cancel" data-interactive="true" onClick={doCancel}>Abbruch</button>
+                        {display && (
+                            <button className="v-btn v-send" data-interactive="true" onClick={doSend}>Senden</button>
                         )}
                     </div>
                 </>
@@ -317,7 +340,7 @@ function MusicScreen() {
             <div className="ph-icon" style={{ background: '#FF6B35' }}>
                 <Icon name="music" color="#1a1a1a" />
             </div>
-            <div className="ph-label">Music</div>
+            <div className="ph-label">Musik</div>
         </div>
     );
 }
@@ -328,7 +351,7 @@ function AudiobooksScreen() {
             <div className="ph-icon" style={{ background: '#FFE66D' }}>
                 <Icon name="headphones" color="#1a1a1a" />
             </div>
-            <div className="ph-label">Books</div>
+            <div className="ph-label">Bücher</div>
         </div>
     );
 }
@@ -337,7 +360,7 @@ function AudiobooksScreen() {
 function LongPressOverlay() {
     return (
         <div className="overlay-screen">
-            <div className="overlay-text">Customise Watch Face</div>
+            <div className="overlay-text">Zifferblatt anpassen</div>
         </div>
     );
 }
@@ -389,7 +412,7 @@ function Watch({ size }) {
     }, []);
 
     const openText = useCallback(() => {
-        setChatMessages([{ from: 'them', text: 'Hey! Where are you?' }]);
+        setChatMessages([{ from: 'them', text: 'Hey! Wo bist du?' }]);
         setView('text');
     }, []);
 
@@ -399,7 +422,7 @@ function Watch({ size }) {
 
     const sendVoice = useCallback((text) => {
         setChatMessages(prev => {
-            const base = prev.length ? prev : [{ from: 'them', text: 'Hey! Where are you?' }];
+            const base = prev.length ? prev : [{ from: 'them', text: 'Hey! Wo bist du?' }];
             return [...base, { from: 'me', text }];
         });
         setView('text');
@@ -446,47 +469,40 @@ function Watch({ size }) {
         if (aod) { wake(); return; }
         wake();
 
-        const dx   = e.clientX - g.x;
-        const dy   = e.clientY - g.y;
+        const dx    = e.clientX - g.x;
+        const dy    = e.clientY - g.y;
         const absDx = Math.abs(dx);
         const absDy = Math.abs(dy);
 
-        // Tap
         if (!g.moved) {
             if (e.target.closest('[data-interactive]')) return;
             if (overlay !== null) { setOverlay(null); return; }
             return;
         }
 
-        // Any swipe clears overlay
         if (overlay !== null) { setOverlay(null); return; }
 
-        // Vertical swipe
         if (absDy > absDx && absDy > SWIPE_THRESHOLD) {
             if (dy < 0 && view === 'watchface') { setView('apps-menu'); return; }
             if (dy > 0) { goBack(); return; }
         }
 
-        // Horizontal swipe
         if (absDx > absDy && absDx > SWIPE_THRESHOLD) {
-            const left  = dx < 0;
-            const right = dx > 0;
+            const left   = dx < 0;
+            const right  = dx > 0;
             const appIdx = APP_VIEWS.indexOf(view);
 
-            // App carousel
             if (appIdx !== -1) {
                 if (left && appIdx < APP_VIEWS.length - 1) {
                     setView(APP_VIEWS[appIdx + 1]);
                     setAppPage(appIdx + 1);
                     setHasSwipedApps(true);
                 } else if (right) {
-                    // swipe right from any app page = back to apps menu
                     setView('apps-menu');
                 }
                 return;
             }
 
-            // Right swipe = back for deep screens
             if (right && BACK_MAP[view]) { goBack(); }
         }
     }, [aod, overlay, view, wake, goBack]);
@@ -538,19 +554,19 @@ function App() {
         <div className="app-root">
             <div className="controls">
                 <label>
-                    Size
+                    Größe
                     <select value={presetId} onChange={e => setPresetId(e.target.value)}>
                         {PRESETS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
                     </select>
                 </label>
-                <button className="reset-btn" onClick={() => setWatchKey(k => k + 1)}>Reset</button>
+                <button className="reset-btn" onClick={() => setWatchKey(k => k + 1)}>Zurücksetzen</button>
             </div>
             <div className="viewport-wrap">
                 <Watch key={watchKey} size={preset.size} />
             </div>
             <div className="hints">
-                Swipe ↑ = apps &nbsp;·&nbsp; Swipe ↓ / → = back &nbsp;·&nbsp; Swipe ← = next app<br />
-                In text thread: tap mic = speak to send &nbsp;·&nbsp; Long press watchface = customise
+                Wischen ↑ = Apps &nbsp;·&nbsp; Wischen ↓ / → = Zurück &nbsp;·&nbsp; Wischen ← = nächste App<br />
+                Nachrichten: Mikrofon antippen zum Sprechen &nbsp;·&nbsp; Lang drücken = Zifferblatt
             </div>
         </div>
     );
