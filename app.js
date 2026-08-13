@@ -33,6 +33,19 @@ const BACK_MAP = {
     'voice-input':    'text',
 };
 
+// Physical device dimensions — adjust to match target hardware
+const PHYSICAL_DIAMETER_MM = 36;
+const PHYSICAL_DIAMETER_PX = Math.round(PHYSICAL_DIAMETER_MM * 96 / 25.4); // 136 px
+
+// Size test options — absolute px so they map directly to real device sizes
+const TEST_WORD    = 'Hallo';
+const TEXT_OPTIONS = [
+    { id: 'A', px: 11 },
+    { id: 'B', px: 14 },
+    { id: 'C', px: 18 },
+    { id: 'D', px: 22 },
+];
+
 // ── Icons ─────────────────────────────────────────────────────────────────
 function Icon({ name, color = '#000', size = '100%' }) {
     const p = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none' };
@@ -159,11 +172,9 @@ function ContactDetailScreen({ contact, onCall, onText }) {
             <div className="detail-actions">
                 <button className="detail-btn call-btn" data-interactive="true" onClick={onCall}>
                     <span className="btn-icon"><Icon name="phone" color="#fff" /></span>
-                    Anrufen
                 </button>
                 <button className="detail-btn text-btn" data-interactive="true" onClick={onText}>
                     <span className="btn-icon"><Icon name="message" color="#fff" /></span>
-                    Nachricht
                 </button>
             </div>
         </div>
@@ -521,29 +532,78 @@ function Watch({ size }) {
     );
 }
 
+// ── Size Test ─────────────────────────────────────────────────────────────
+function SizeTestTextScreen({ selected, onSelect }) {
+    return (
+        <div className="screen size-text-screen">
+            {TEXT_OPTIONS.map(opt => (
+                <div
+                    key={opt.id}
+                    className={`size-text-option${selected === opt.id ? ' selected' : ''}`}
+                    onClick={() => onSelect(opt.id)}
+                    style={{ fontSize: opt.px + 'px' }}
+                >
+                    {TEST_WORD}
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function SizeTest() {
+    const [selected, setSelected] = useState(null);
+    const px  = PHYSICAL_DIAMETER_PX;
+    const sel = TEXT_OPTIONS.find(o => o.id === selected);
+    const watchStyle = { width: px, height: px, '--ws': px + 'px' };
+
+    return (
+        <div className="size-test-wrap">
+            <div className="facilitator-panel">
+                <span className="fp-label">Gewählt:</span>
+                {sel
+                    ? <span className="fp-value">Option {sel.id} — {sel.px} px / {(sel.px * 0.75).toFixed(1)} pt</span>
+                    : <span className="fp-none">noch keine Auswahl</span>
+                }
+            </div>
+            <div className="watch-body" style={watchStyle}>
+                <SizeTestTextScreen selected={selected} onSelect={setSelected} />
+            </div>
+        </div>
+    );
+}
+
 // ── App shell ─────────────────────────────────────────────────────────────
 function App() {
-    const [presetId, setPresetId] = useState('xl');
-    const [watchKey, setWatchKey] = useState(0);
+    const [presetId, setPresetId]     = useState('xl');
+    const [watchKey, setWatchKey]     = useState(0);
+    const [activeTest, setActiveTest] = useState('nav');
     const preset = PRESETS.find(p => p.id === presetId) || PRESETS[3];
 
     return (
         <div className="app-root">
             <div className="controls">
                 <label>
-                    Größe
-                    <select value={presetId} onChange={e => setPresetId(e.target.value)}>
-                        {PRESETS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                    Test
+                    <select value={activeTest} onChange={e => setActiveTest(e.target.value)}>
+                        <option value="nav">Navigation Test</option>
+                        <option value="size">Size Test</option>
                     </select>
                 </label>
-                <button className="reset-btn" onClick={() => setWatchKey(k => k + 1)}>Zurücksetzen</button>
+                {activeTest === 'nav' && (<>
+                    <label>
+                        Größe
+                        <select value={presetId} onChange={e => setPresetId(e.target.value)}>
+                            {PRESETS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                        </select>
+                    </label>
+                    <button className="reset-btn" onClick={() => setWatchKey(k => k + 1)}>Zurücksetzen</button>
+                </>)}
             </div>
             <div className="viewport-wrap">
-                <Watch key={watchKey} size={preset.size} />
-            </div>
-            <div className="hints">
-                Wischen ↑ = Apps &nbsp;·&nbsp; Wischen ↓ / → = Zurück &nbsp;·&nbsp; Wischen ← = nächste App<br />
-                Nachrichten: Mikrofon antippen zum Sprechen &nbsp;·&nbsp; Lang drücken = Zifferblatt
+                {activeTest === 'nav'
+                    ? <Watch key={watchKey} size={preset.size} />
+                    : <SizeTest />
+                }
             </div>
         </div>
     );
