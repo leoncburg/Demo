@@ -275,7 +275,7 @@ function VoiceInputScreen({ onSend, onCancel }) {
                     {display  && <p className="voice-transcript">{display}</p>}
                     <div className="voice-actions">
                         <button className="v-btn v-cancel" data-interactive="true" onClick={onCancel}>Abbruch</button>
-                        {display && !listening && (
+                        {display && (
                             <button className="v-btn v-send" data-interactive="true" onClick={doSend}>Senden</button>
                         )}
                     </div>
