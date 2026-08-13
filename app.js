@@ -208,9 +208,8 @@ function VoiceInputScreen({ onSend, onCancel }) {
             return;
         }
 
-        // Create a fresh instance on every start/restart.
-        // Reusing a stopped SpeechRecognition instance is the cause of
-        // the "everything breaks after one transcription" bug.
+        let startTimer = null;
+
         function startNew() {
             if (stoppedRef.current) return;
 
@@ -222,8 +221,6 @@ function VoiceInputScreen({ onSend, onCancel }) {
             rec.onstart = () => setListening(true);
 
             rec.onresult = (e) => {
-                // e.resultIndex is the first new result; iterate only new ones
-                // to avoid duplicating already-final text
                 let newFinal = '';
                 let interim  = '';
                 for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -236,30 +233,48 @@ function VoiceInputScreen({ onSend, onCancel }) {
 
             rec.onend = () => {
                 setListening(false);
-                // Browser stopped (often after silence even with continuous:true).
-                // Restart with a new instance rather than re-calling start()
-                // on the stopped one, which fails in some browser versions.
-                if (!stoppedRef.current) startNew();
+                // Give the browser a moment to release the mic before restarting.
+                // Without this buffer, Chrome sometimes refuses to start a new
+                // session immediately, causing silent failures on the next contact.
+                if (!stoppedRef.current) {
+                    startTimer = setTimeout(startNew, 150);
+                }
             };
 
             rec.onerror = (ev) => {
                 setListening(false);
-                if (ev.error === 'no-speech') return; // silence → onend restarts
+                // 'no-speech' and 'aborted' are non-fatal — onend will restart.
+                // Previously 'aborted' fell through and set stoppedRef=true, which
+                // caused voice to break permanently for subsequent contacts.
+                if (ev.error === 'no-speech' || ev.error === 'aborted') return;
                 stoppedRef.current = true;
                 if (ev.error === 'not-allowed')
                     setError('Mikrofon gesperrt — Zugriff erlauben');
                 else if (ev.error === 'service-not-allowed')
                     setError('Localhost oder HTTPS erforderlich');
-                else if (ev.error !== 'aborted')
+                else
                     setError(`Fehler: ${ev.error}`);
             };
 
             recRef.current = rec;
-            try { rec.start(); } catch (_) { /* caught by onerror */ }
+            try {
+                rec.start();
+            } catch (_) {
+                // start() can throw if called too soon after a previous abort;
+                // retry after a longer pause.
+                startTimer = setTimeout(startNew, 500);
+            }
         }
 
-        startNew();
-        return () => { stoppedRef.current = true; recRef.current?.abort(); };
+        // Delay the initial start so any previous session the browser is still
+        // tearing down has time to fully release the microphone.
+        startTimer = setTimeout(startNew, 150);
+
+        return () => {
+            clearTimeout(startTimer);
+            stoppedRef.current = true;
+            recRef.current?.abort();
+        };
     }, [attempt]);
 
     const doSend = () => {
