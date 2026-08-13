@@ -302,6 +302,14 @@ html, body {
     text-align: center;
 }
 
+.voice-error {
+    font-size: calc(var(--ws) * 0.072);
+    color: #f44336;
+    text-align: center;
+    line-height: 1.35;
+    width: 90%;
+}
+
 .voice-transcript {
     font-size: calc(var(--ws) * 0.082);
     color: #fff;

@@ -187,61 +187,82 @@ function CallScreen({ contact, onEnd }) {
 function VoiceInputScreen({ onSend, onCancel }) {
     const [transcript, setTranscript] = useState('');
     const [listening,  setListening]  = useState(false);
-    const [ready,      setReady]      = useState(false);
+    const [error,      setError]      = useState('');
+    const [attempt,    setAttempt]    = useState(0); // increment to retry
     const recRef = useRef(null);
 
     useEffect(() => {
+        setError('');
+        setTranscript('');
+        setListening(false);
+
         const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SR) { setReady(true); return; }
+        if (!SR) {
+            setError('Use Chrome or Safari for voice');
+            return;
+        }
 
         const rec = new SR();
-        rec.continuous      = false;
-        rec.interimResults  = true;
-        rec.lang            = 'en-US';
+        rec.continuous     = true;   // keep listening through pauses
+        rec.interimResults = true;
+        rec.lang           = 'en-US';
 
-        rec.onstart  = () => { setListening(true);  setReady(false); };
+        rec.onstart  = () => setListening(true);
         rec.onresult = (e) => {
-            const t = Array.from(e.results).map(r => r[0].transcript).join('');
+            let t = '';
+            for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
             setTranscript(t);
         };
-        rec.onend    = () => { setListening(false); setReady(true); };
+        rec.onend    = () => setListening(false);
         rec.onerror  = (ev) => {
-            if (ev.error !== 'aborted') setListening(false);
-            setReady(true);
+            setListening(false);
+            if (ev.error === 'not-allowed')
+                setError('Mic blocked — allow in browser');
+            else if (ev.error === 'service-not-allowed')
+                setError('Open via localhost, not file://');
+            else if (ev.error !== 'aborted')
+                setError(`Mic error: ${ev.error}`);
         };
 
         recRef.current = rec;
-        try { rec.start(); } catch (_) { setReady(true); }
+        try { rec.start(); } catch (_) { setError('Could not start mic'); }
         return () => { rec.abort(); };
-    }, []);
+    }, [attempt]);
 
     const doSend = () => {
         recRef.current?.abort();
-        onSend(transcript.trim() || '…');
+        if (transcript.trim()) onSend(transcript.trim());
+        else onCancel();
     };
-    const doCancel = () => {
-        recRef.current?.abort();
-        onCancel();
-    };
-
-    const statusText = listening ? 'Listening…'
-        : transcript ? ''
-        : ready      ? 'Tap Send'
-        :              'Starting…';
+    const doCancel = () => { recRef.current?.abort(); onCancel(); };
+    const retry    = () => setAttempt(a => a + 1);
 
     return (
         <div className="screen voice-screen">
             <div className={`mic-ring${listening ? ' listening' : ''}`}>
-                <Icon name="mic" color={listening ? '#FF6B35' : 'rgba(255,255,255,0.4)'} />
+                <Icon name="mic" color={listening ? '#FF6B35' : error ? '#f44336' : 'rgba(255,255,255,0.4)'} />
             </div>
-            {statusText  && <p className="voice-status">{statusText}</p>}
-            {transcript  && <p className="voice-transcript">{transcript}</p>}
-            <div className="voice-actions">
-                <button className="v-btn v-cancel" data-interactive="true" onClick={doCancel}>Cancel</button>
-                {(transcript || ready) && (
-                    <button className="v-btn v-send" data-interactive="true" onClick={doSend}>Send</button>
-                )}
-            </div>
+
+            {error ? (
+                <>
+                    <p className="voice-error">{error}</p>
+                    <div className="voice-actions">
+                        <button className="v-btn v-cancel" data-interactive="true" onClick={doCancel}>Back</button>
+                        <button className="v-btn v-send"   data-interactive="true" onClick={retry}>Retry</button>
+                    </div>
+                </>
+            ) : (
+                <>
+                    {!transcript && <p className="voice-status">{listening ? 'Listening…' : 'Starting…'}</p>}
+                    {transcript  && <p className="voice-transcript">{transcript}</p>}
+                    <div className="voice-actions">
+                        <button className="v-btn v-cancel" data-interactive="true" onClick={doCancel}>Cancel</button>
+                        {transcript && (
+                            <button className="v-btn v-send" data-interactive="true" onClick={doSend}>Send</button>
+                        )}
+                    </div>
+                </>
+            )}
         </div>
     );
 }
