@@ -606,6 +606,22 @@ html, body {
     font-variant-numeric: tabular-nums;
 }
 
+/* Button on device screen (Buttons mode) */
+.threshold-btn {
+    border: none;
+    background: rgba(255, 255, 255, 0.16);
+    color: rgba(255, 255, 255, 0.90);
+    font-size: calc(var(--ws) * 0.085);
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    transition: background 80ms;
+}
+.threshold-btn:active { background: rgba(255, 255, 255, 0.28); }
+
 /* Word on device screen */
 .threshold-word {
     color: rgba(255, 255, 255, 0.90);
