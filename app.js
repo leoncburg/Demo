@@ -188,10 +188,12 @@ function VoiceInputScreen({ onSend, onCancel }) {
     const [transcript, setTranscript] = useState('');
     const [listening,  setListening]  = useState(false);
     const [error,      setError]      = useState('');
-    const [attempt,    setAttempt]    = useState(0); // increment to retry
-    const recRef = useRef(null);
+    const [attempt,    setAttempt]    = useState(0);
+    const recRef     = useRef(null);
+    const stoppedRef = useRef(false); // true when we deliberately stop
 
     useEffect(() => {
+        stoppedRef.current = false;
         setError('');
         setTranscript('');
         setListening(false);
@@ -203,9 +205,9 @@ function VoiceInputScreen({ onSend, onCancel }) {
         }
 
         const rec = new SR();
-        rec.continuous     = true;   // keep listening through pauses
+        rec.continuous     = true;
         rec.interimResults = true;
-        rec.lang           = 'en-US';
+        rec.lang           = 'de-DE';
 
         rec.onstart  = () => setListening(true);
         rec.onresult = (e) => {
@@ -213,9 +215,18 @@ function VoiceInputScreen({ onSend, onCancel }) {
             for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
             setTranscript(t);
         };
-        rec.onend    = () => setListening(false);
-        rec.onerror  = (ev) => {
+        // Browsers often stop the recogniser after silence even with continuous:true.
+        // Restart automatically unless we deliberately stopped.
+        rec.onend = () => {
             setListening(false);
+            if (!stoppedRef.current) {
+                try { rec.start(); setListening(true); } catch (_) {}
+            }
+        };
+        rec.onerror = (ev) => {
+            setListening(false);
+            if (ev.error === 'no-speech') return; // silence timeout — onend will restart
+            stoppedRef.current = true;
             if (ev.error === 'not-allowed')
                 setError('Mic blocked — allow in browser');
             else if (ev.error === 'service-not-allowed')
@@ -226,15 +237,16 @@ function VoiceInputScreen({ onSend, onCancel }) {
 
         recRef.current = rec;
         try { rec.start(); } catch (_) { setError('Could not start mic'); }
-        return () => { rec.abort(); };
+        return () => { stoppedRef.current = true; rec.abort(); };
     }, [attempt]);
 
     const doSend = () => {
+        stoppedRef.current = true;
         recRef.current?.abort();
         if (transcript.trim()) onSend(transcript.trim());
         else onCancel();
     };
-    const doCancel = () => { recRef.current?.abort(); onCancel(); };
+    const doCancel = () => { stoppedRef.current = true; recRef.current?.abort(); onCancel(); };
     const retry    = () => setAttempt(a => a + 1);
 
     return (
@@ -253,7 +265,7 @@ function VoiceInputScreen({ onSend, onCancel }) {
                 </>
             ) : (
                 <>
-                    {!transcript && <p className="voice-status">{listening ? 'Listening…' : 'Starting…'}</p>}
+                    {!transcript && <p className="voice-status">{listening ? 'Lauscht…' : 'Startet…'}</p>}
                     {transcript  && <p className="voice-transcript">{transcript}</p>}
                     <div className="voice-actions">
                         <button className="v-btn v-cancel" data-interactive="true" onClick={doCancel}>Cancel</button>
