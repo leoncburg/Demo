@@ -187,105 +187,73 @@ function VoiceInputScreen({ onSend, onCancel }) {
     const [display,   setDisplay]   = useState('');
     const [listening, setListening] = useState(false);
     const [error,     setError]     = useState('');
-    const [attempt,   setAttempt]   = useState(0);
-
-    // stoppedRef: true when we deliberately stop so onend doesn't restart
-    const stoppedRef = useRef(false);
-    // finalRef: accumulates confirmed text across recognition sessions
-    const finalRef   = useRef('');
-    const recRef     = useRef(null);
+    const [recKey,    setRecKey]    = useState(0); // increment to start a new recording
 
     useEffect(() => {
-        stoppedRef.current = false;
-        finalRef.current   = '';
-        setDisplay('');
-        setError('');
-        setListening(false);
-
         const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SR) {
-            setError('Chrome oder Safari erforderlich');
-            return;
-        }
+        if (!SR) { setError('Chrome oder Safari erforderlich'); return; }
 
-        let startTimer = null;
+        // `active` is a plain closure boolean, not a ref. It is scoped to this
+        // exact useEffect run, so there is zero shared state between old and new
+        // recognition sessions — the root cause of the "breaks after one message" bug.
+        let active    = true;
+        let finalText = '';    // accumulated final text within this session
+        const rec = new SR();
 
-        function startNew() {
-            if (stoppedRef.current) return;
+        // continuous:false stops after each utterance.
+        // This avoids the restart loop that was racing against the browser's
+        // async mic-release and silently failing on subsequent contacts.
+        rec.continuous     = false;
+        rec.interimResults = true;
+        rec.lang           = 'de-DE';
 
-            const rec = new SR();
-            rec.continuous     = true;
-            rec.interimResults = true;
-            rec.lang           = 'de-DE';
-
-            rec.onstart = () => setListening(true);
-
-            rec.onresult = (e) => {
-                let newFinal = '';
-                let interim  = '';
-                for (let i = e.resultIndex; i < e.results.length; i++) {
-                    if (e.results[i].isFinal) newFinal += e.results[i][0].transcript;
-                    else                      interim  += e.results[i][0].transcript;
-                }
-                if (newFinal) finalRef.current += newFinal;
-                setDisplay(finalRef.current + interim);
-            };
-
-            rec.onend = () => {
-                setListening(false);
-                // Give the browser a moment to release the mic before restarting.
-                // Without this buffer, Chrome sometimes refuses to start a new
-                // session immediately, causing silent failures on the next contact.
-                if (!stoppedRef.current) {
-                    startTimer = setTimeout(startNew, 150);
-                }
-            };
-
-            rec.onerror = (ev) => {
-                setListening(false);
-                // 'no-speech' and 'aborted' are non-fatal — onend will restart.
-                // Previously 'aborted' fell through and set stoppedRef=true, which
-                // caused voice to break permanently for subsequent contacts.
-                if (ev.error === 'no-speech' || ev.error === 'aborted') return;
-                stoppedRef.current = true;
-                if (ev.error === 'not-allowed')
-                    setError('Mikrofon gesperrt — Zugriff erlauben');
-                else if (ev.error === 'service-not-allowed')
-                    setError('Localhost oder HTTPS erforderlich');
-                else
-                    setError(`Fehler: ${ev.error}`);
-            };
-
-            recRef.current = rec;
-            try {
-                rec.start();
-            } catch (_) {
-                // start() can throw if called too soon after a previous abort;
-                // retry after a longer pause.
-                startTimer = setTimeout(startNew, 500);
+        rec.onstart  = () => { if (active) setListening(true); };
+        rec.onresult = (e) => {
+            if (!active) return;
+            let fin = '', interim = '';
+            for (let i = e.resultIndex; i < e.results.length; i++) {
+                if (e.results[i].isFinal) fin    += e.results[i][0].transcript;
+                else                      interim += e.results[i][0].transcript;
             }
-        }
+            finalText += fin;
+            setDisplay(finalText + interim);
+        };
+        rec.onend    = () => { if (active) setListening(false); };
+        rec.onerror  = (ev) => {
+            if (!active || ev.error === 'no-speech' || ev.error === 'aborted') return;
+            setListening(false);
+            if (ev.error === 'not-allowed')
+                setError('Mikrofon gesperrt — Zugriff erlauben');
+            else if (ev.error === 'service-not-allowed')
+                setError('Localhost oder HTTPS erforderlich');
+            else
+                setError(`Fehler: ${ev.error}`);
+        };
 
-        // Delay the initial start so any previous session the browser is still
-        // tearing down has time to fully release the microphone.
-        startTimer = setTimeout(startNew, 150);
+        // 300 ms delay gives the browser time to fully release the mic from any
+        // previous session before this one tries to acquire it.
+        const t = setTimeout(() => {
+            if (!active) return;
+            try { rec.start(); } catch (_) { if (active) setError('Start fehlgeschlagen'); }
+        }, 300);
 
         return () => {
-            clearTimeout(startTimer);
-            stoppedRef.current = true;
-            recRef.current?.abort();
+            active = false;
+            clearTimeout(t);
+            // stop() is graceful (processes buffered audio before closing).
+            // A deferred abort() is a safety net in case stop() doesn't fire onend.
+            // Neither call touches any state because `active` is already false.
+            try { rec.stop(); } catch (_) {}
+            setTimeout(() => { try { rec.abort(); } catch (_) {} }, 200);
         };
-    }, [attempt]);
+    }, [recKey]);
 
-    const doSend = () => {
-        stoppedRef.current = true;
-        recRef.current?.abort();
-        const text = display.trim();
-        if (text) onSend(text);
-        else onCancel();
-    };
-    const doCancel = () => { stoppedRef.current = true; recRef.current?.abort(); onCancel(); };
-    const retry    = () => setAttempt(a => a + 1);
+    // doSend and onCancel do NOT call abort/stop themselves.
+    // Navigating away unmounts this component, which runs the cleanup above.
+    // Calling abort() here AND in cleanup caused double-abort race conditions
+    // that left the browser mic locked for the next session.
+    const doSend  = () => { if (display.trim()) onSend(display.trim()); else onCancel(); };
+    const doRetry = () => { setError(''); setDisplay(''); setRecKey(k => k + 1); };
 
     return (
         <div className="screen voice-screen">
@@ -297,8 +265,8 @@ function VoiceInputScreen({ onSend, onCancel }) {
                 <>
                     <p className="voice-error">{error}</p>
                     <div className="voice-actions">
-                        <button className="v-btn v-cancel" data-interactive="true" onClick={doCancel}>Zurück</button>
-                        <button className="v-btn v-send"   data-interactive="true" onClick={retry}>Erneut</button>
+                        <button className="v-btn v-cancel" data-interactive="true" onClick={onCancel}>Zurück</button>
+                        <button className="v-btn v-send"   data-interactive="true" onClick={doRetry}>Erneut</button>
                     </div>
                 </>
             ) : (
@@ -306,8 +274,8 @@ function VoiceInputScreen({ onSend, onCancel }) {
                     {!display && <p className="voice-status">{listening ? 'Lauscht…' : 'Startet…'}</p>}
                     {display  && <p className="voice-transcript">{display}</p>}
                     <div className="voice-actions">
-                        <button className="v-btn v-cancel" data-interactive="true" onClick={doCancel}>Abbruch</button>
-                        {display && (
+                        <button className="v-btn v-cancel" data-interactive="true" onClick={onCancel}>Abbruch</button>
+                        {display && !listening && (
                             <button className="v-btn v-send" data-interactive="true" onClick={doSend}>Senden</button>
                         )}
                     </div>
