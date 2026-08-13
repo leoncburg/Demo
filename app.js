@@ -564,6 +564,7 @@ function SizeTest() {
     const [screenId,    setScreenId]    = useState('xl');
     const [sizeIdx,     setSizeIdx]     = useState(SIZE_START);
     const [wordIdx,     setWordIdx]     = useState(0);
+    const [btnPressed,  setBtnPressed]  = useState(false);
     const [allOutcomes, setAllOutcomes] = useState({});
     // allOutcomes: { [mode]: { [screenId]: { [sizeIdx]: outcome } } }
     // Keyed by mode so switching modes doesn't overwrite each other's data.
@@ -591,12 +592,14 @@ function SizeTest() {
         if (next < 0 || next >= TEXT_SIZES.length) return;
         setSizeIdx(next);
         setWordIdx(w => w + 1); // fresh word/icon every step regardless of direction
+        setBtnPressed(false);
     };
 
     const changeScreen = (id) => {
         setScreenId(id);
         setSizeIdx(SIZE_START);
         setWordIdx(0);
+        setBtnPressed(false);
     };
 
     const record = (outcome) => {
@@ -666,12 +669,13 @@ function SizeTest() {
                     )}
                     {mode === 'buttons' && (
                         <button
-                            className="threshold-btn"
+                            className={`threshold-btn${btnPressed ? ' pressed' : ''}`}
                             style={{
                                 width: sizePx + 'px',
                                 height: sizePx + 'px',
                                 borderRadius: Math.round(sizePx * 0.22) + 'px',
                             }}
+                            onClick={() => setBtnPressed(true)}
                         >
                             {sizePx >= 18 ? 'OK' : null}
                         </button>

@@ -620,7 +620,8 @@ html, body {
     overflow: hidden;
     transition: background 80ms;
 }
-.threshold-btn:active { background: rgba(255, 255, 255, 0.28); }
+.threshold-btn:active  { background: rgba(255, 255, 255, 0.28); }
+.threshold-btn.pressed { background: #4ECDC4; color: #1a1a1a; }
 
 /* Word on device screen */
 .threshold-word {
