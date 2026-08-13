@@ -31,7 +31,7 @@ const BACK_MAP = {
     'contact-detail': 'contacts-list',
     'call':           'contact-detail',
     'text':           'contact-detail',
-    'voice-input':    'call',
+    'voice-input':    'text',
 };
 
 // ── Icons ─────────────────────────────────────────────────────────────────
@@ -171,19 +171,14 @@ function ContactDetailScreen({ contact, onCall, onText }) {
     );
 }
 
-function CallScreen({ contact, onMic, onEnd }) {
+function CallScreen({ contact, onEnd }) {
     return (
         <div className="screen call-screen">
             <div className="call-avatar" style={{ background: contact.color }}>{contact.initial}</div>
             <div className="call-name">{contact.name}</div>
             <div className="call-status">Calling<span className="call-dots" /></div>
-            <div className="call-actions">
-                <div className="call-circle mic-circle" data-interactive="true" onClick={onMic}>
-                    <Icon name="mic" color="#fff" />
-                </div>
-                <div className="call-circle end-circle" data-interactive="true" onClick={onEnd}>
-                    <Icon name="x" color="#fff" />
-                </div>
+            <div className="call-circle end-circle" data-interactive="true" onClick={onEnd}>
+                <Icon name="x" color="#fff" />
             </div>
         </div>
     );
@@ -251,7 +246,7 @@ function VoiceInputScreen({ onSend, onCancel }) {
     );
 }
 
-function TextScreen({ contact, messages, onReply }) {
+function TextScreen({ contact, messages, onReply, onMic }) {
     const scrollRef = useRef(null);
     useEffect(() => {
         if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -267,12 +262,17 @@ function TextScreen({ contact, messages, onReply }) {
                     </div>
                 ))}
             </div>
-            <div className="quick-replies">
-                {QUICK_REPLIES.map(r => (
-                    <button key={r} className="reply-chip" data-interactive="true" onClick={() => onReply(r)}>
-                        {r}
-                    </button>
-                ))}
+            <div className="text-actions">
+                <div className="mic-chip" data-interactive="true" onClick={onMic}>
+                    <Icon name="mic" color="#4ECDC4" />
+                </div>
+                <div className="quick-replies">
+                    {QUICK_REPLIES.map(r => (
+                        <button key={r} className="reply-chip" data-interactive="true" onClick={() => onReply(r)}>
+                            {r}
+                        </button>
+                    ))}
+                </div>
             </div>
         </div>
     );
@@ -447,13 +447,8 @@ function Watch({ size }) {
                     setAppPage(appIdx + 1);
                     setHasSwipedApps(true);
                 } else if (right) {
-                    if (appIdx > 0) {
-                        setView(APP_VIEWS[appIdx - 1]);
-                        setAppPage(appIdx - 1);
-                        setHasSwipedApps(true);
-                    } else {
-                        setView('apps-menu');
-                    }
+                    // swipe right from any app page = back to apps menu
+                    setView('apps-menu');
                 }
                 return;
             }
@@ -475,9 +470,9 @@ function Watch({ size }) {
             case 'apps-menu':      content = <AppsMenuScreen onSelect={goToApp} />; break;
             case 'contacts-list':  content = <ContactsListScreen onSelect={openContact} />; break;
             case 'contact-detail': content = <ContactDetailScreen contact={selectedContact} onCall={() => setView('call')} onText={openText} />; break;
-            case 'call':           content = <CallScreen contact={selectedContact} onMic={() => setView('voice-input')} onEnd={() => setView('contact-detail')} />; break;
-            case 'voice-input':    content = <VoiceInputScreen onSend={sendVoice} onCancel={() => setView('call')} />; break;
-            case 'text':           content = <TextScreen contact={selectedContact} messages={chatMessages} onReply={sendReply} />; break;
+            case 'call':           content = <CallScreen contact={selectedContact} onEnd={() => setView('contact-detail')} />; break;
+            case 'voice-input':    content = <VoiceInputScreen onSend={sendVoice} onCancel={() => setView('text')} />; break;
+            case 'text':           content = <TextScreen contact={selectedContact} messages={chatMessages} onReply={sendReply} onMic={() => setView('voice-input')} />; break;
             case 'music':          content = <MusicScreen />; break;
             case 'audiobooks':     content = <AudiobooksScreen />; break;
             default:               content = <WatchfaceScreen />;
@@ -521,8 +516,8 @@ function App() {
                 <Watch key={watchKey} size={preset.size} />
             </div>
             <div className="hints">
-                Swipe ↑ = apps &nbsp;·&nbsp; Swipe ↓ = back &nbsp;·&nbsp; Swipe ← → = between apps<br />
-                From call: tap mic = voice message &nbsp;·&nbsp; Long press watchface = customise
+                Swipe ↑ = apps &nbsp;·&nbsp; Swipe ↓ / → = back &nbsp;·&nbsp; Swipe ← = next app<br />
+                In text thread: tap mic = speak to send &nbsp;·&nbsp; Long press watchface = customise
             </div>
         </div>
     );
