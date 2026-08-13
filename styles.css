@@ -68,6 +68,15 @@ html, body {
     cursor: pointer;
     user-select: none;
     touch-action: none;
+    /*
+     * Safe-zone token
+     * The inscribed square of a circle with diameter D has side D/√2 ≈ 0.707D,
+     * so each corner margin is (1 − 0.707)/2 ≈ 14.6 %.
+     * We round up to 15 % for a comfortable 70 % safe square.
+     * Every screen that uses padding: var(--safe-inset) is guaranteed
+     * to keep content out of the clipped corners.
+     */
+    --safe-inset: calc(var(--ws) * 0.15);
 }
 
 /* ── Generic screen ── */
@@ -100,11 +109,13 @@ html, body {
 }
 
 /* ── Apps menu ─────────────────────────────────────────────────────────────
-   Padding is 10% each side so the list rows stay within the circle
-   even at the top and bottom items.
+   All four sides padded with --safe-inset so the content lives inside the
+   70 % inscribed square.  At 40 mm (151 px) this gives a 106 × 106 px
+   usable area; three rows of 24 px icons + 3.6 % vertical padding each
+   = ~105 px total — exactly fits.
    ── */
 .apps-menu-screen {
-    padding: 0 calc(var(--ws) * 0.10);
+    padding: var(--safe-inset);
     justify-content: center;
     gap: 0;
 }
@@ -115,21 +126,23 @@ html, body {
     gap: calc(var(--ws) * 0.06);
     width: 100%;
     cursor: pointer;
-    padding: calc(var(--ws) * 0.04) 0;
+    /* Tighter vertical padding so 3 rows sit comfortably in the safe zone */
+    padding: calc(var(--ws) * 0.036) 0;
     border-bottom: 1px solid rgba(255, 255, 255, 0.07);
 }
 
 .app-row:last-child { border-bottom: none; }
 
 .app-icon-sq {
-    width: calc(var(--ws) * 0.20);
-    height: calc(var(--ws) * 0.20);
-    border-radius: calc(var(--ws) * 0.055);
+    /* Reduced from 20 % → 16 % so the row height fits inside the safe zone */
+    width: calc(var(--ws) * 0.16);
+    height: calc(var(--ws) * 0.16);
+    border-radius: calc(var(--ws) * 0.045);
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    padding: calc(var(--ws) * 0.04);
+    padding: calc(var(--ws) * 0.03);
 }
 
 .app-row-label {
